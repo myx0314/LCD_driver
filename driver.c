@@ -9,6 +9,7 @@
 #include <linux/uaccess.h>
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
+#include <linux/platform_device.h>
 
 #define LCD_CNT	1
 #define LCD_NAME	"myx_lcd"
@@ -83,8 +84,10 @@ static struct file_operations lcd_fops = {
 	.write = lcd_write,
 };
 
-static int __init lcd_driver_init(void) {
-    int ret = 0;
+static int lcd_probe(struct platform_device *dev) {
+	int ret = 0;
+
+	printk("Led driver and device were matched\r\n");
 
 	lcd.nd = of_find_node_by_path("/alphaled");
 	if (lcd.nd == NULL) {
@@ -154,13 +157,38 @@ fail_devid:
 	return ret;
 }
 
-static void __exit lcd_driver_exit(void) {
-    /* 注销字符设备驱动 */
+static int lcd_remove(struct platform_device *dev) {
+	gpio_set_value(lcd.gpio_num, 1);
+
+	/* 注销字符设备驱动 */
 	cdev_del(&lcd.cdev);/*  删除cdev */
 	unregister_chrdev_region(lcd.devid, LCD_CNT); /* 注销设备号 */
 
 	device_destroy(lcd.class, lcd.devid);
 	class_destroy(lcd.class);
+	return 0;
+}
+
+static const struct of_device_id lcd_of_match[] = {
+	{ .compatible = "atkalpha-led" },
+	{ /* Sentinel */ }
+};
+
+static struct platform_driver lcd_driver = {
+	.driver = {
+		.name = "myx-led",
+		.of_match_table = lcd_of_match,
+	},
+	.probe = lcd_probe,
+	.remove = lcd_remove,
+};
+
+static int __init lcd_driver_init(void) {
+	return platform_driver_register(&lcd_driver);
+}
+
+static void __exit lcd_driver_exit(void) {
+	platform_driver_unregister(&lcd_driver);
 }
 
 module_init(lcd_driver_init);
