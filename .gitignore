@@ -2,7 +2,9 @@
 *.ko
 *.mod.*
 *.o
+*.o.d
 *.out
 Module.symvers
 modules.order
 .tmp_versions
+out

@@ -7,17 +7,13 @@
 #include <linux/of_address.h>
 #include <linux/io.h>
 #include <linux/uaccess.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 
 #define LCD_CNT	1
 #define LCD_NAME	"myx_lcd"
 #define LED_ON 1
 #define LED_OFF 0
-
-static void __iomem *IMX6U_CCM_CCGR1;
-static void __iomem *SW_MUX_GPIO1_IO03;
-static void __iomem *SW_PAD_GPIO1_IO03;
-static void __iomem *GPIO1_DR;
-static void __iomem *GPIO1_GDIR;
 
 struct lcd_dev {
 	dev_t devid;						/* 设备号 	 */
@@ -27,23 +23,18 @@ struct lcd_dev {
 	int major;							/* 主设备号	  */
 	int minor;							/* 次设备号   */
 	struct device_node *nd; 			/* 设备节点 */
+	int gpio_num;
 };
 
 struct lcd_dev lcd;
 
 void led_switch(u8 sta) {
-	u32 val = 0;
-
 	if (sta == LED_ON) {
 		printk("led on!");
-		val = readl(GPIO1_DR);
-		val &= ~(1 << 3); 
-		writel(val, GPIO1_DR);
+		gpio_set_value(lcd.gpio_num, 0);
 	} else if(sta == LED_OFF) {
 		printk("led off!");
-		val = readl(GPIO1_DR);
-		val |= (1 << 3);
-		writel(val, GPIO1_DR);
+		gpio_set_value(lcd.gpio_num, 1);
 	} 
 }
 
@@ -94,9 +85,6 @@ static struct file_operations lcd_fops = {
 
 static int __init lcd_driver_init(void) {
     int ret = 0;
-	const char* str = NULL;
-	struct property *proper = NULL;
-	u32 val = 0;
 
 	lcd.nd = of_find_node_by_path("/alphaled");
 	if (lcd.nd == NULL) {
@@ -104,48 +92,17 @@ static int __init lcd_driver_init(void) {
 		return -EINVAL;
 	}
 
-	proper = of_find_property(lcd.nd, "compatible", NULL);
-	if (proper == NULL) {
-		printk("of_find_property failed!");
+	lcd.gpio_num = of_get_named_gpio(lcd.nd, "alphaled-gpio", 0);
+	if (lcd.gpio_num < 0) {
+		printk("of_get_named_gpio failed!");
 		return -EINVAL;
 	}
 
-	ret = of_property_read_string(lcd.nd, "status", &str);
+	ret = gpio_direction_output(lcd.gpio_num, 1);
 	if (ret < 0) {
-		printk("of_find_read_string failed!");
+		printk("gpio_direction_output failed!");
 		return -EINVAL;
 	}
-
-	IMX6U_CCM_CCGR1 = of_iomap(lcd.nd, 0);
-	SW_MUX_GPIO1_IO03 = of_iomap(lcd.nd, 1);
-	SW_PAD_GPIO1_IO03 = of_iomap(lcd.nd, 2);
-	GPIO1_DR = of_iomap(lcd.nd, 3);
-	GPIO1_GDIR = of_iomap(lcd.nd, 4);
-
-	/* 使能 GPIO1 时钟 */
-	val = readl(IMX6U_CCM_CCGR1);
-	val &= ~(3 << 26); /* 清楚以前的设置 */
-	val |= (3 << 26); /* 设置新值 */
-	writel(val, IMX6U_CCM_CCGR1);
-
- 	/* 设置 GPIO1_IO03 的复用功能，将其复用为
-	* GPIO1_IO03，最后设置 IO 属性。
-	*/
-	writel(5, SW_MUX_GPIO1_IO03);
-
-	/* 寄存器 SW_PAD_GPIO1_IO03 设置 IO 属性 */
-	writel(0x10B0, SW_PAD_GPIO1_IO03);
-
-	/* 设置 GPIO1_IO03 为输出功能 */
-	val = readl(GPIO1_GDIR);
-	val &= ~(1 << 3); /* 清除以前的设置 */
-	val |= (1 << 3); /* 设置为输出 */
-	writel(val, GPIO1_GDIR);
-
-	/* 5、默认关闭 LED */
-	val = readl(GPIO1_DR);
-	val |= (1 << 3); 
-	writel(val, GPIO1_DR);
 
 	/* 注册字符设备驱动 */
 	/* 1、创建设备号 */
